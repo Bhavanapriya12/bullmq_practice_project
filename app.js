@@ -11,7 +11,7 @@ require("./helpers/redisFunctions");
 
 require("./helpers/routeConfig")(app);
 
-// require("./helpers/consumer");
+require("./helpers/consumer");
 
 app.listen(process.env.PORT, () => {
   console.log(`Listening on port http://localhost:${process.env.PORT}`);

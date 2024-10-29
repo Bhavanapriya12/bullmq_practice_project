@@ -3,8 +3,8 @@ const mongoFunctions = require("../../helpers/mongoFunctions");
 const router = express.Router();
 const validations = require("../../helpers/schema");
 const functions = require("../../helpers/functions");
-const queue = require("../../helpers/producer");
-const worker=require("../../helpers/consumer");
+const queue_job = require("../../helpers/producer");
+const worker = require("../../helpers/consumer");
 
 router.post("/user_register", async (req, res) => {
   const { error, value } = validations.user_register(req.body);
@@ -22,16 +22,91 @@ router.post("/user_register", async (req, res) => {
 router.post("/user_payment", async (req, res) => {
   const { error, value } = validations.payment(req.body);
   if (error) return res.status(400).send(error.details[0].message);
-  let data = value;
 
+  let data = value;
   let sender = data.sender_user_id;
   let receiver = data.receiver_user_id;
   let balance = data.balance;
+  let coin = data.coin;
+  const find_receiver = await mongoFunctions.find_one("FILES", {
+    user_id: receiver,
+  });
+  console.log(find_receiver, "find___receiver");
 
-  await queue.add_job("payment", { sender, receiver, balance });
-  // await worker.
+  const find_sender = await mongoFunctions.find_one("FILES", {
+    user_id: sender,
+  });
 
-  return res.status(200).send("Transaction Processed Successfully..!");
+  if (!find_receiver) {
+    return res.status(400).send("Receiver Not Found");
+  }
+
+  if (!find_sender) {
+    return res.status(400).send("Sender Not Found");
+  }
+
+  console.log(find_receiver);
+
+  if (find_sender.balance < data.balance) {
+    return res.status(400).send("Insufficient Balance..!");
+  }
+  const T_id = functions.get_random_string("TR", 8);
+  console.log(T_id);
+
+  const job = await queue_job.add_job("payment", {
+    T_id,
+    coin,
+    sender,
+    receiver,
+    balance,
+  });
+
+  return res
+    .status(200)
+    .send({ message: "Payment Processing..", payment_id: data.T_id });
+});
+
+router.post("/get_payment_result", async (req, res) => {
+  const { error, value } = validations.get_payment(req.body);
+  if (error) {
+    return res.status(400).send(error.details[0].message);
+  }
+
+  const data = value;
+
+  try {
+    const findId = await mongoFunctions.find_one("FILES", {
+      "transaction_history.t_id": data.id,
+    });
+
+    if (!findId) {
+      return res.status(400).send("Transaction ID doesn't exist.");
+    }
+
+    console.log(findId);
+
+    // Find the specific transaction in the array
+    const history = findId.transaction_history.find(
+      (transaction) => transaction.t_id === data.id
+    );
+
+    if (!history) {
+      return res.status(400).send("Transaction history not found.");
+    }
+
+    if (history.status === "success") {
+      return res.status(200).send("Payment done successfully!");
+    } else if (history.status === "failed") {
+      return res.status(400).send("Payment failed.");
+    } else {
+      return res.status(400).send("Unknown payment status.");
+    }
+  } catch (err) {
+    console.error(err);
+    return res
+      .status(500)
+      .send("An error occurred while processing your request.");
+  }
 });
 
 module.exports = router;

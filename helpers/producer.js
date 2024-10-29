@@ -1,12 +1,13 @@
-const { Queue } = require("bullmq");
+const { Queue, QueueEvents } = require("bullmq");
 
-const queue = new Queue("my-queue", {
+let queue = new Queue("my-queue", {
   connection: {
     host: process.env.REDIS_URL,
     port: process.env.REDIS_PORT,
     password: process.env.REDIS_PASSWORD,
   },
 });
+
 
 module.exports = {
   add_job: async (name, data) => {

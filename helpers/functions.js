@@ -30,43 +30,98 @@ module.exports = {
   },
   transaction: async (data) => {
     console.log("transaction process---->", data);
-    const find_receiver = await mongoFunctions.find_one("FILES", {
-      user_id: data.receiver,
-    });
-    console.log(find_receiver, "find___reciver");
+    let balance = parseFloat(data.balance);
 
-    const find_sender = await mongoFunctions.find_one("FILES", {
-      user_id: data.sender,
-    });
-    if (!find_receiver) {
-      return res.status(400).send("Receiver Not Found");
-    }
-    if (!find_sender) {
-      return res.status(400).send("Sender Not Found");
-    }
-    console.log(find_receiver);
     const bulkOps = [
       {
         updateOne: {
           filter: { user_id: data.sender },
-          update: { $inc: { balance: -data.balance } }, // Decrease sender's money
+          update: { $inc: { balance: balance } },
         },
       },
       {
         updateOne: {
           filter: { user_id: data.receiver },
-          update: { $inc: { balance: data.balance } }, // Increase receiver's money
+          update: { $inc: { balance: balance } },
         },
       },
     ];
 
+    let sender_t_history = {
+      t_id: data.T_id,
+      status: "success",
+      receiver: data.receiver,
+      amount: data.balance,
+      coin: data.coin,
+    };
+
+    let receiver_t_history = {
+      t_id: data.T_id,
+      status: "success",
+      sender: data.sender,
+      amount: data.balance,
+      coin: data.coin,
+    };
+
+    let sender_tf_history = {
+      t_id: data.T_id,
+      status: "failed",
+      receiver: data.receiver,
+      amount: data.balance,
+      coin: data.coin,
+    };
+
+    let receiver_tf_history = {
+      t_id: data.T_id,
+      status: "failed",
+      sender: data.sender,
+      amount: data.balance,
+      coin: data.coin,
+    };
+
     try {
       const result = await mongoFunctions.bulkWrite("FILES", bulkOps);
+
       console.log("Money adjusted successfully:", result);
-      return true;
+
+      if (result) {
+        await mongoFunctions.bulkWrite("FILES", [
+          {
+            updateOne: {
+              filter: { user_id: data.sender },
+              update: { $push: { transaction_history: sender_t_history } },
+            },
+          },
+          {
+            updateOne: {
+              filter: { user_id: data.receiver },
+              update: { $push: { transaction_history: receiver_t_history } },
+            },
+          },
+        ]);
+        return {
+          success: true,
+          message: "Transaction completed successfully!",
+        };
+      }
     } catch (error) {
       console.error("Error adjusting money:", error);
+
+      await mongoFunctions.bulkWrite("FILES", [
+        {
+          updateOne: {
+            filter: { user_id: data.sender },
+            update: { $push: { transaction_history: sender_tf_history } },
+          },
+        },
+        {
+          updateOne: {
+            filter: { user_id: data.receiver },
+            update: { $push: { transaction_history: receiver_tf_history } },
+          },
+        },
+      ]);
+      return { success: false, message: "Transaction failed due to an error!" };
     }
   },
-
 };

@@ -14,9 +14,16 @@ function payment(data) {
   const schema = Joi.object({
     sender_user_id: Joi.string().required(),
     receiver_user_id: Joi.string().required(),
+    coin: Joi.string().required(),
     balance: Joi.number().required(),
   });
   return schema.validate(data);
 }
+function get_payment(data) {
+  const schema = Joi.object({
+    id: Joi.string().required(),
+  });
+  return schema.validate(data);
+}
 
-module.exports = { user_register, payment };
+module.exports = { user_register, payment, get_payment };
