@@ -27,6 +27,8 @@ router.post("/user_payment", async (req, res) => {
   let sender = data.sender_user_id;
   let receiver = data.receiver_user_id;
   let balance = data.balance;
+  balance = balance.toFixed(8);
+
   let coin = data.coin;
   const find_receiver = await mongoFunctions.find_one("FILES", {
     user_id: receiver,
