@@ -75,14 +75,14 @@ module.exports = {
         (err, res) => {}
       );
       return true;
-    } else if (COLLECTION === "ORGANISATIONS") {
+    } else if (COLLECTION === "FILES") {
       obj._id = undefined;
       obj.__v = undefined;
       obj.createdAt = undefined;
       obj.updatedAt = undefined;
       await client.hSet(
-        "CRM_ORGANISATIONS",
-        obj.organisation_id,
+        "USERS",
+        obj.user_id,
         JSON.stringify(obj),
         (err, res) => {}
       );

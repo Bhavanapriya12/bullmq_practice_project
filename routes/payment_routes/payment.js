@@ -5,29 +5,76 @@ const validations = require("../../helpers/schema");
 const functions = require("../../helpers/functions");
 const queue_job = require("../../helpers/producer");
 const worker = require("../../helpers/consumer");
+const redis = require("../../helpers/redisFunctions");
+const { Auth } = require("../../middlewares/auth");
+const bcrypt = require("../../helpers/hash");
+const jwt = require("jsonwebtoken");
 
 router.post("/user_register", async (req, res) => {
   const { error, value } = validations.user_register(req.body);
   if (error) return res.status(400).send(error.details[0].message);
   let data = value;
+  let email = await mongoFunctions.find_one("FILES", { email: data.email });
+  if (email) {
+    return res.status(400).send("Email Already Exists");
+  }
+  let password = bcrypt.hash_password(data.password);
   const user = {
     user_id: functions.get_random_string("PU", 5),
-    email: data.email,
+    email: data.email.toLowerCase(),
     username: data.username,
     balance: data.balance,
+    password: password,
   };
-  await mongoFunctions.create_new_record("FILES", user);
+  let users = await mongoFunctions.create_new_record("FILES", user);
+  await redis.update_redis("FILES", users);
   return res.status(200).send("User Registered Successfully");
 });
-router.post("/user_payment", async (req, res) => {
+
+router.post("/user_login", async (req, res) => {
+  let data = req.body;
+  console.log(data);
+  //validate data
+  var { error } = validations.user_login(data);
+  if (error) return res.status(400).send(error.details[0].message);
+  const user = await mongoFunctions.find_one("FILES", {
+    email: data.email.toLowerCase(),
+  });
+  if (!user) return res.status(400).send("No User Found With The Given Email");
+  const validPassword = await bcrypt.compare_password(
+    data.password,
+    user.password
+  );
+  console.log(validPassword);
+  console.log(user.password);
+  if (!validPassword) return res.status(400).send("Incorrect Password");
+
+  const token = jwt.sign(
+    {
+      user_id: user.user_id,
+      email: user.email,
+      username: user.username,
+    },
+    process.env.jwtPrivateKey,
+    { expiresIn: "7d" }
+  );
+  console.log(token);
+
+  return res.status(200).send({
+    success: "Logged In Successfully",
+    token: token,
+  });
+});
+router.post("/user_payment", Auth, async (req, res) => {
   const { error, value } = validations.payment(req.body);
   if (error) return res.status(400).send(error.details[0].message);
 
   let data = value;
-  let sender = data.sender_user_id;
+  let sender = req.employee.user_id;
   let receiver = data.receiver_user_id;
   let balance = data.balance;
   balance = balance.toFixed(8);
+  let transaction_fee = 1;
 
   let coin = data.coin;
   const find_receiver = await mongoFunctions.find_one("FILES", {
@@ -55,13 +102,31 @@ router.post("/user_payment", async (req, res) => {
   const T_id = functions.get_random_string("TR", 8);
   console.log(T_id);
 
-  const job = await queue_job.add_job("payment", {
-    T_id,
-    coin,
-    sender,
-    receiver,
-    balance,
-  });
+  const job = await queue_job.add_job(
+    "payment",
+    {
+      T_id,
+      coin,
+      sender,
+      receiver,
+      balance,
+      transaction_fee,
+    }
+    // {
+    //   timeout: 5000,
+    // }
+  );
+  // let status = await mongoFunctions.find_one("HISTORY", { t_id: T_id });
+  // if (status.status === "success") {
+  //   return res
+  //     .status(200)
+  //     .send({ message: "Payment Success..", payment_id: data.T_id });
+  // }
+  // if (status.status === "failed") {
+  //   return res
+  //     .status(200)
+  //     .send({ message: "Payment Failed..", payment_id: data.T_id });
+  // }
 
   return res
     .status(200)

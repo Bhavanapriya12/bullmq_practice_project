@@ -1,4 +1,6 @@
 const FILES = require("../models/add_user");
+const HISTORY = require("../models/add_transaction");
+const DATA=require("../models/add_data");
 
 module.exports = {
   create_new_record: async (collection, data) => {
