@@ -1,5 +1,6 @@
 var RedisClient = require("redis");
 const mongofunctions = require("./mongoFunctions");
+// require('dotenv').config();
 let client;
 
 if (process.env.REDIS_URL) {
@@ -8,6 +9,7 @@ if (process.env.REDIS_URL) {
     password: process.env.REDIS_PASSWORD,
   });
 }
+
 // alertDev(process.env.REDIS_URL);
 
 client.on("error", (err) => {
@@ -136,6 +138,35 @@ module.exports = {
     });
   },
   //-----------------redis functions------------------
+  store_categories_in_redis: async (data) => {
+    try {
+      await client.set("categories", JSON.stringify(data));
+
+      console.log("Billers data stored in Redis successfully!");
+    } catch (error) {
+      console.error("Error storing data in Redis:", error);
+    }
+  },
+  get_categories: async () => {
+    try {
+      const data = await client.get("categories");
+      if (data) {
+        const parsedData = JSON.parse(data);
+        console.log(
+          "Billers data retrieved from Redis successfully:",
+          parsedData
+        );
+        return parsedData;
+      } else {
+        console.log("No data found for key 'categories' in Redis.");
+        return null;
+      }
+    } catch (error) {
+      console.error("Error retrieving data from Redis:", error);
+      throw error;
+    }
+  },
+
   redisGet: async (hash, key, parse = false) => {
     let check_exists = await client.hExists(hash, key);
     if (check_exists) {
@@ -149,6 +180,28 @@ module.exports = {
         return false;
       }
     } else {
+      return false;
+    }
+  },
+  redis_set_with_expiration: async (
+    key,
+    value,
+    expirationInSeconds,
+    parse = false
+  ) => {
+    try {
+      // If the value needs to be parsed (i.e., it's an object), stringify it before saving
+      if (parse) {
+        value = JSON.stringify(value);
+      }
+
+      await client.set(key, value, "EX", expirationInSeconds);
+      console.log(
+        `Key "${key}" set with expiration of ${expirationInSeconds} seconds.`
+      );
+      return true;
+    } catch (err) {
+      console.error("Error setting value in Redis:", err);
       return false;
     }
   },
@@ -181,6 +234,20 @@ module.exports = {
     }
     return false;
   },
+  redisGet: async (key, parse = false) => {
+    let check_exists = await client.exists(key);
+    if (check_exists) {
+      var value = await client.GET(key);
+      if (value) {
+        if (parse) {
+          value = JSON.parse(value);
+        }
+        return value;
+      }
+      return false;
+    }
+    return false;
+  },
 
   redisSetSingle: async (hash, data, parse = false) => {
     if (parse) {
@@ -190,16 +257,44 @@ module.exports = {
     return dta;
   },
 
+  redisGetFromHash: async (hashName, key) => {
+    try {
+      const data = await client.hGet(hashName, key);
+      if (data) {
+        console.log(
+          `Data fetched from hash "${hashName}" with key "${key}":`,
+          data
+        );
+        return JSON.parse(data);
+      } else {
+        console.log(`No data found for key "${key}" in hash "${hashName}"`);
+        return null;
+      }
+    } catch (err) {
+      console.error(
+        `Error fetching data from hash "${hashName}" with key "${key}":`,
+        err
+      );
+      throw err;
+    }
+  },
   redisInsert: async (hash, key, data, parse = false) => {
     try {
+      // Parse data to JSON string if specified
       if (parse) {
         data = JSON.stringify(data);
       }
-      return await client.hSet(hash, key, data);
+
+      // Insert the data into the hash
+      const result = await client.hSet(hash, key, data);
+      console.log(`Data inserted into hash "${hash}" with key "${key}".`);
+      return result;
     } catch (err) {
-      console.log("err in redis insert", err);
+      console.error("Error in redisInsert:", err);
+      throw err; // Rethrow the error to handle it upstream
     }
   },
+
   redisHdelete: async (hash, key) => {
     var dta = await client.hDel(hash, key);
     return dta;

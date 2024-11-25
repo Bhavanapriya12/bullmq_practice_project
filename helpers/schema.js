@@ -54,6 +54,34 @@ function add_data(data) {
   return schema.validate(data);
 }
 
+function get_biller_by_id(data) {
+  const schema = Joi.object({
+    biller_id: Joi.string().required(),
+  });
+  return schema.validate(data);
+}
+function verify_account(data) {
+  const schema = Joi.object({
+    biller_code: Joi.string().required(),
+    amount: Joi.string().required(),
+    account_number: Joi.string().required(),
+    other_charges: Joi.string().required(),
+  });
+  return schema.validate(data);
+}
+function create_payment(data) {
+  const schema = Joi.object({
+    validation_number: Joi.string().required(),
+  });
+  return schema.validate(data);
+}
+function get_biller_by_category(data) {
+  const schema = Joi.object({
+    category: Joi.string().required(),
+  });
+  return schema.validate(data);
+}
+
 module.exports = {
   user_register,
   payment,
@@ -61,4 +89,8 @@ module.exports = {
   user_login,
   login,
   add_data,
+  get_biller_by_id,
+  verify_account,
+  create_payment,
+  get_biller_by_category,
 };

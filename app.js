@@ -11,7 +11,8 @@ require("./helpers/redisFunctions");
 
 require("./helpers/routeConfig")(app);
 
-require("./helpers/consumer");
+// require("./helpers/consumer");
+require("./helpers/cronjob");
 
 
 app.listen(process.env.PORT, () => {

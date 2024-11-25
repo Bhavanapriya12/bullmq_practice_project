@@ -1,6 +1,8 @@
 const FILES = require("../models/add_user");
 const HISTORY = require("../models/add_transaction");
-const DATA=require("../models/add_data");
+const DATA = require("../models/add_data");
+const STATS = require("../models/add_stats");
+// require('dotenv').config();
 
 module.exports = {
   create_new_record: async (collection, data) => {

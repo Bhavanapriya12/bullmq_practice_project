@@ -1,6 +1,7 @@
 const express = require("express");
 const payment = require("../routes/payment_routes/payment");
-const billers = require("../routes/payment_routes/billers");
+// const billers = require("../routes/payment_routes/billers");
+const { router: billersRouter } = require("../routes/payment_routes/billers");
 
 const queue = require("express-queue");
 
@@ -24,7 +25,7 @@ module.exports = (app) => {
   );
   app.use(
     "/billers",
-    billers,
+    billersRouter,
     queue({
       activeLimit: 1,
       queuedLimit: -1,

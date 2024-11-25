@@ -15,10 +15,15 @@ const {
   update_redis,
   genOtp,
   redisGetSingle,
+  redis_set_with_expiration,
+  store_billers_in_redis,
+  redisGetAll,
+  redisGet,
+  store_categories_in_redis,
+  redisGetFromHash,
+  get_categories,
 } = require("../../helpers/redisFunctions");
 router.post("/data", async (req, res) => {
-  // console.log(data);
-  //validate data
   var { value, error } = validations.add_data(req.body);
   if (error) return res.status(400).send(error.details[0].message);
   let data = value;
@@ -57,104 +62,82 @@ router.post("/get_data", async (req, res) => {
   return res.status(200).send(data);
 });
 
-const upload = multer({ dest: "uploads/" });
-router.post("/add_data_from_xl", upload.single("Data"), async (req, res) => {
+//parsejwt function
+
+function parseJwt(token) {
   try {
-    console.log("Uploaded file:", req.file.filename);
-
-    if (!req.file) {
-      return res.status(400).send("No File Uploaded.");
-    }
-    console.log(req.file);
-
-    const workbook = XLSX.readFile(req.file.path);
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet);
-    console.log(jsonData);
-    console.log("jsondata[0]------------", jsonData[0]);
-    console.log("jsondata[1]----------------", jsonData[1]);
-
-    // for (const data of jsonData) {
-
-    for (let i = 1; i < jsonData.length; i++) {
-      const row = jsonData[i];
-      console.log("row=------>", row);
-
-      const data_xl = {
-        name: row["__EMPTY_1"],
-      };
-      console.log(data_xl);
-      const data_add = await mongoFunctions.find_one_and_update(
-        "DATA",
-        { user_id: "12345" },
-        {
-          $push: { data: data_xl },
-        }
-      );
-      console.log(data_add);
-      if (!data_add) {
-        return res.status(400).send("Failed To Add Data.");
-      }
-    }
-
-    return res.status(200).send({
-      success: "Data Added Successfully..!!",
-    });
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => `%${("00" + c.charCodeAt(0).toString(16)).slice(-2)}`)
+        .join("")
+    );
+    console.log(jsonPayload);
+    return JSON.parse(jsonPayload);
   } catch (error) {
-    console.error("Error adding data from Excel:", error);
-    res.status(500).send("Internal Server Error");
+    console.error("Error parsing JWT:", error);
+    return null;
   }
-});
+}
 
-//authentication token
+//function for expiration
 
-// const api_token =
-//   "eyJraWQiOiJraWoydFFERTZiSWxnOFE3enZMSmFZaE5jNXdlWHRzaVM0OW1vYVR4YWs0PSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiIzNmRkbHRubG1rbXFrbWJ1M2E4MXRwNnBrbSIsInRva2VuX3VzZSI6ImFjY2VzcyIsInNjb3BlIjoibWVjb20tYXV0aFwvYWxsIiwiYXV0aF90aW1lIjoxNzMxMzAyODU3LCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAuYXAtc291dGhlYXN0LTEuYW1hem9uYXdzLmNvbVwvYXAtc291dGhlYXN0LTFfWmZCalVlU3kzIiwiZXhwIjoxNzMxMzA2NDU3LCJpYXQiOjE3MzEzMDI4NTcsInZlcnNpb24iOjIsImp0aSI6IjEzNTY4MGJiLTAwYWUtNGFkZC05NzI0LTY0ZmYyZTQ0OTgyNCIsImNsaWVudF9pZCI6IjM2ZGRsdG5sbWttcWttYnUzYTgxdHA2cGttIn0.FpFhNgauegikL92lZ-3kvs49azetzdL3qUCkY_-nPXN-wyPOCxaN4VgWJrcKbn79eDHGaMbG8ZscPTS-e45kp_b-Nwsydc37knIBw6vY07e_uroMuRXPosr_S7rLWHV840vXyOMzcGW_4D_nRcWHw2kIrVmBYtY4v9Fj8MnfCe7QQ-vkzORFgvN4Qt2dadLHtdNvikidBYeXBBLRmQY2F7uOQVdv-gsWaZ7LBG32rRYy7D_BNKEl-q7bdcdayyJwJebkIjea_AOtx7eKxlzxcA202fhO8r1c8QQInAk_TkNuQrHq9SYFlTrd6STy87z_RcG2Ik204L3CaZVpMATGzw";
+function is_token_expired(token) {
+  const tokenData = parseJwt(token);
+  const currentTime = Math.floor(Date.now() / 1000);
+  return tokenData.exp < currentTime;
+}
 
 //request to get auth token
 
 async function api_token() {
-  // const stored_token = await redisGetSingle("bayad_api_token");
+  const stored_token = await redisGetSingle("bayad_api_token");
+  console.log("stored token-------------->", stored_token);
+  if (!stored_token || is_token_expired(stored_token)) {
+    console.log(
+      "Stored token is missing or expired. Generating a new token..."
+    );
 
-  // if (stored_token) {
-  //   console.log("Using stored token");
-  //   return stored_token;
-  // }
+    // if (!stored_token) {
+    console.log("generating new token");
+    const username = "36ddltnlmkmqkmbu3a81tp6pkm";
+    const password = "6l9nefmg8j2cprdf37au5agu3sidaa6lp6tfk0n7qicgs8v7stq";
+    const tpa_id = "E0GG";
+    const scope = "mecom-auth/all";
 
-  const username = "36ddltnlmkmqkmbu3a81tp6pkm";
-  const password = "6l9nefmg8j2cprdf37au5agu3sidaa6lp6tfk0n7qicgs8v7stq";
-  const tpa_id = "E0GG";
-  const scope = "mecom-auth/all";
+    const data = {
+      grant_type: "client_credentials",
+      tpa_id: tpa_id,
+      scope: scope,
+    };
 
-  const data = {
-    grant_type: "client_credentials",
-    tpa_id: tpa_id,
-    scope: scope,
-  };
+    const config = {
+      method: "post",
+      maxBodyLength: Infinity,
+      url: "https://stg.bc-api.bayad.com/v3/oauth2/token",
+      headers: {
+        Authorization:
+          "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
+      },
+      data: data,
+    };
 
-  const config = {
-    method: "post",
-    maxBodyLength: Infinity,
-    url: "https://stg.bc-api.bayad.com/v3/oauth2/token",
-    headers: {
-      Authorization:
-        "Basic " + Buffer.from(`${username}:${password}`).toString("base64"),
-    },
-    data: data,
-  };
+    try {
+      const response = await axios(config);
 
-  try {
-    const response = await axios(config);
+      const token = response.data.access_token;
+      await redis_set_with_expiration("bayad_api_token", token, 3500);
 
-    const token = response.data.access_token;
-    // await ("bayad_api_token", 3600, token);
-
-    console.log("Generated Token:", token);
-    return token;
-  } catch (error) {
-    console.error("Error generating token:", error.message || error);
-    throw error;
+      console.log("Generated Token:", token);
+      return token;
+    } catch (error) {
+      console.error("Error generating token:", error.message || error);
+      throw error;
+    }
   }
+  return stored_token;
 }
 
 // request to get  billers
@@ -199,7 +182,7 @@ const get_biller_details = async () => {
       // timeout: 5000,
     });
 
-    const response = await api.get("/billers/MECOR");
+    const response = await api.get("/billers/UBXPC");
     console.log("Biller Details:", response.data);
   } catch (error) {
     if (error.response) {
@@ -228,7 +211,7 @@ const verify_account = async (
         Authorization: `Bearer ${get_token}`,
         "Content-Type": "application/json",
       },
-      timeout: 5000,
+      // timeout: 5000,
     });
 
     const request_body = {
@@ -261,13 +244,327 @@ const verify_account = async (
 };
 
 //request to create payment
+async function create_payment(
+  biller_code,
+  client_reference,
+  validation_number
+) {
+  try {
+    // const request_body = {
+    //   clientReference: client_reference,
+    //   validationNumber: validation_number,
+    // };
 
+    const request_body = {
+      clientReference: functions.generate_reference_number("E0GG"),
+      validationNumber: "d529a73d-0c96-4a86-865f-d133daaba732",
+    };
 
+    console.log(request_body);
+    const get_token = await api_token();
 
-get_billers();
-get_biller_details();
-verify_account("MECOR", "0136173373", 23, 0.00);
+    const api = axios.create({
+      baseURL: "https://stg.bc-api.bayad.com/v3",
+      headers: {
+        Authorization: `Bearer ${get_token}`,
+        "Content-Type": "application/json",
+      },
+      // timeout: 5000,
+    });
+    console.log(api);
 
-//request to initiate payment
+    const response = await api.post(
+      `/billers/${biller_code}/payments`,
+      request_body
+    );
+    console.log(response, "errror");
 
-module.exports = router;
+    if (response.status === 200 && response.data.status === "Pending") {
+      console.log("Payment successfully created. Transaction is queued.");
+      return response.data;
+    } else {
+      console.error("Failed to create payment", response.data);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error occurred while calling Create Payment API:", error);
+    return null;
+  }
+}
+//request to inquire payment
+async function inquire_payment(biller_code, validation_number) {
+  try {
+    const get_token = await api_token();
+
+    if (!get_token) {
+      console.error("Unable to fetch API token.");
+      return null;
+    }
+
+    const api = axios.create({
+      baseURL: "https://stg.bc-api.bayad.com/v3",
+      headers: {
+        Authorization: `Bearer ${get_token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const response = await api.post(
+      `/billers/${biller_code}/payments/${validation_number}`
+    );
+    if (response.status === 200) {
+      console.log("Payment Inquiry Response:", response.data);
+      return response.data;
+    } else {
+      console.error("Failed to inquire payment:", response.data);
+      return null;
+    }
+  } catch (error) {
+    if (error.response) {
+      console.error("Error occurred during Inquire Payment API call:");
+      console.error("Status:", error.response.status);
+      console.error("Response Data:", error.response.data);
+      console.error("Response Headers:", error.response.headers);
+    } else if (error.request) {
+      console.error("No response received from Inquire Payment API.");
+    } else {
+      console.error("Error:", error.message);
+    }
+    return null;
+  }
+}
+
+//route to get categories
+router.post("/get_categories", async (req, res) => {
+  try {
+    const get_token = await api_token();
+
+    // const api = axios.create({
+    //   baseURL: "https://stg.bc-api.bayad.com/v3",
+    //   headers: {
+    //     Authorization: `Bearer ${get_token}`,
+    //     "Content-Type": "application/json",
+    //   },
+    //   timeout: 5000,
+    // });
+    let response = await get_categories("categories");
+    console.log(response);
+
+    // if (data) {
+    //   console.log("fetched from redis");
+    //   return res
+    //     .status(200)
+    //     .send({ success: true, categories: JSON.parse(data) });
+    // } else {
+    // const response = await api.get("/billers?categoriesOnly=true");
+
+    // await store_categories_in_redis(response.data);
+
+    return res.status(200).json({
+      success: true,
+      categories: response,
+    });
+  } catch (error) {
+    console.error("Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      details: error.message,
+    });
+  }
+});
+
+//route to get billers by category
+
+router.post("/get_billers_by_category", async (req, res) => {
+  try {
+    var { value, error } = validations.get_biller_by_category(req.body);
+    if (error) return res.status(400).send(error.details[0].message);
+    let data = value;
+    const get_token = await api_token();
+
+    // const api = axios.create({
+    //   baseURL: "https://stg.bc-api.bayad.com/v3",
+    //   headers: {
+    //     Authorization: `Bearer ${get_token}`,
+    //     "Content-Type": "application/json",
+    //   },
+    //   timeout: 5000,
+    // });
+
+    // const response = await api.get(`/billers?category=${data.category}`);
+    const category = await redisGetFromHash("categories", data.category);
+
+    return res.status(200).json({
+      success: true,
+      data: category,
+    });
+  } catch (error) {
+    console.error("Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      details: error.message,
+    });
+  }
+});
+
+//route to get all billers
+router.post("/get_all_billers", async (req, res) => {
+  try {
+    const get_token = await api_token();
+
+    let data = await mongoFunctions.find("STATS");
+    console.log(data);
+
+    return res.status(200).json({ success: true, billers: data });
+  } catch (error) {
+    console.error("Error:", error.message);
+
+    // Return error response
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      details: error.message,
+    });
+  }
+});
+
+//route to get biller by biller id
+router.post("/get_biller_by_id", async (req, res) => {
+  try {
+    var { value, error } = validations.get_biller_by_id(req.body);
+    if (error) return res.status(400).send(error.details[0].message);
+    let data = value;
+
+    const get_token = await api_token();
+
+    // const api = axios.create({
+    //   baseURL: "https://stg.bc-api.bayad.com/v3",
+    //   headers: {
+    //     Authorization: `Bearer ${get_token}`,
+    //     "Content-Type": "application/json",
+    //   },
+    //   timeout: 5000,
+    // });
+
+    // const response = await api.get(`/billers/${data.biller_id}`);
+    let findId = await mongoFunctions.find_one("STATS", {
+      biller_id: data.biller_id,
+    });
+    if (!findId) {
+      return res.status(400).send("Biller Not Found");
+    }
+    return res.status(200).json({ success: true, biller_details: findId });
+  } catch (error) {
+    console.error("Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      details: error.message,
+    });
+  }
+});
+
+//route to verify account
+router.post("/verify_account", async (req, res) => {
+  var { value, error } = validations.verify_account(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+  let data = value;
+  try {
+    const result = await verify_account(
+      data.biller_code,
+      data.account_number,
+      data.amount,
+      data.other_charges
+    );
+    return res.status(200).json(result);
+  } catch (error) {
+    return res.status(500).json({
+      error: "An unexpected error occurred.",
+      message: error.message,
+    });
+  }
+});
+
+//route to create payment
+router.post("/create_payment", async (req, res) => {
+  var { value, error } = validations.create_payment(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+  let dataa = value;
+  const token = await api_token();
+
+  const clientReference = await functions.generate_reference_number("E0GG");
+  const validationNumber = dataa.validation_number;
+
+  const data = {
+    clientReference,
+    validationNumber,
+  };
+
+  console.log(data, "data");
+
+  const config = {
+    method: "post",
+    maxBodyLength: Infinity,
+    url: "https://stg.bc-api.bayad.com/v3/billers/MECOR/payments",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    data,
+  };
+
+  try {
+    const createPayamount = await axios(config);
+    console.log(createPayamount.data);
+
+    return res.status(200).send(createPayamount.data);
+  } catch (error) {
+    console.error(
+      "Error response:",
+      error.response ? error.response.data : error.message
+    );
+    return res
+      .status(400)
+      .send(
+        error.response ? error.response.data.details.message : "Error occurred"
+      );
+  }
+});
+
+//route to inquire payment
+
+router.post("/inquire_payment", async (req, res) => {
+  try {
+    const { biller_code, validation_number } = req.body;
+
+    if (!biller_code || !validation_number) {
+      return res.status(400).json({
+        success: false,
+        message: "Biller code and validation number are required",
+      });
+    }
+
+    try {
+      const result = await inquire_payment(biller_code, validation_number);
+      return res.status(200).json(result);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        error: "An unexpected error occurred.",
+        message: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      error: "Internal server error",
+      message: error.message,
+    });
+  }
+});
+
+module.exports = { router, api_token };
+// module.exports = api_token;
+// module.exports = router;

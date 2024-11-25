@@ -1,4 +1,5 @@
 require("dotenv").config();
+const moment = require("moment");
 
 require("./db")();
 const redis = require("./redisFunctions");
@@ -28,6 +29,29 @@ module.exports = {
         .toString("hex")
         .toUpperCase() + str
     );
+  },
+
+  generate_reference_number: async (tpa_id) => {
+    let sequenceStore = {};
+    if (!tpa_id || tpa_id.length !== 4) {
+      throw new Error("TPA ID must be 4 characters.");
+    }
+    const now = moment();
+    const year = now.format("YY");
+    const dayOfYear = now.dayOfYear().toString().padStart(3, "0");
+
+    const today = now.format("YYYY-MM-DD");
+
+    if (!sequenceStore[today]) {
+      sequenceStore[today] = 1;
+    } else {
+      sequenceStore[today]++;
+    }
+
+    const sequenceNumber = sequenceStore[today].toString().padStart(7, "0");
+    const clientReference = `${tpa_id}${year}${dayOfYear}${sequenceNumber}`;
+
+    return clientReference;
   },
   transaction: async (data) => {
     const TRANSACTION_STATUS = {
