@@ -151,6 +151,7 @@ const get_billers = async () => {
       "Content-Type": "application/json",
     },
     timeout: 5000,
+    stored_token,
   });
 
   try {
@@ -414,10 +415,21 @@ router.post("/get_all_billers", async (req, res) => {
   try {
     const get_token = await api_token();
 
-    let data = await mongoFunctions.find("STATS");
-    console.log(data);
+    // let data = await mongoFunctions.find("STATS");
+    // console.log(data);
+    const api = axios.create({
+      baseURL: "https://stg.bc-api.bayad.com/v3",
+      headers: {
+        Authorization: `Bearer ${get_token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-    return res.status(200).json({ success: true, billers: data });
+    const categoriesResponse = await api.get("/billers");
+
+    return res
+      .status(200)
+      .json({ success: true, billers: categoriesResponse.data });
   } catch (error) {
     console.error("Error:", error.message);
 
@@ -471,12 +483,37 @@ router.post("/verify_account", async (req, res) => {
   var { value, error } = validations.verify_account(req.body);
   if (error) return res.status(400).send(error.details[0].message);
   let data = value;
+  let other_charges;
+  if (data.other_charges !== "NONE") {
+    other_charges = data.other_charges;
+  } else {
+    const token = await api_token();
+    // return res.send(token);
+    console.log(token, "token");
+
+    if (!token) {
+      return res.status(401).json({ message: "Failed to fetch API token" });
+    }
+
+    const config = {
+      method: "get",
+      maxBodyLength: Infinity,
+      url: `https://stg.bc-api.bayad.com/v3/billers/${data.biller_code}/fees?amount=${data.amount}`,
+      headers: {
+        Authorization: token,
+      },
+    };
+
+    const other_chargesR = await axios(config);
+    other_charges = other_chargesR.data.data.otherCharges;
+  }
+  console.log("other_charges-------------", other_charges);
   try {
     const result = await verify_account(
       data.biller_code,
       data.account_number,
       data.amount,
-      data.other_charges
+      other_charges
     );
     return res.status(200).json(result);
   } catch (error) {
@@ -517,6 +554,8 @@ router.post("/create_payment", async (req, res) => {
   try {
     const createPayamount = await axios(config);
     console.log(createPayamount.data);
+
+    transactions_data = {};
 
     return res.status(200).send(createPayamount.data);
   } catch (error) {
@@ -562,6 +601,41 @@ router.post("/inquire_payment", async (req, res) => {
       error: "Internal server error",
       message: error.message,
     });
+  }
+});
+
+//get other charges
+
+router.post("/get_other_charges", async (req, res) => {
+  // Fetch API token
+  const token = await api_token();
+  // return res.send(token);
+  console.log(token, "token");
+
+  if (!token) {
+    return res.status(401).json({ message: "Failed to fetch API token" });
+  }
+
+  var config = {
+    method: "get",
+    maxBodyLength: Infinity,
+    url: `https://stg.bc-api.bayad.com/v3/billers/UBXPC/fees`,
+    headers: {
+      Authorization: token,
+    },
+  };
+  try {
+    var payload = {
+      code: "!@#$",
+      otherCharges: "amount requred",
+    };
+    const otherCharges = await axios(config);
+    console.log(otherCharges.data, "dssdsdasda");
+    return res.status(200).send(otherCharges.data);
+  } catch (error) {
+    console.log(error.response.data.details.message);
+    console.log(payload);
+    return res.status(400).send(error);
   }
 });
 

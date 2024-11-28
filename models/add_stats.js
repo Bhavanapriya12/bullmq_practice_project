@@ -9,7 +9,7 @@ const stats_schema = new mongoose.Schema(
     category: { type: String },
     status: { type: String },
     type: { type: String },
-    other_charges: { type: String },
+    other_charges: { type: String, required: true },
     payload: { type: Object },
   },
   { timestamps: true }
