@@ -71,6 +71,7 @@ function verify_account(data) {
 }
 function create_payment(data) {
   const schema = Joi.object({
+    biller_id: Joi.string().required(),
     validation_number: Joi.string().required(),
   });
   return schema.validate(data);

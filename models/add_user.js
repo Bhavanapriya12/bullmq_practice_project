@@ -6,13 +6,13 @@ const user_schema = new mongoose.Schema(
     user_id: { type: String, required: true, unique: true, index: true },
     email: { type: String, required: true, index: true },
     username: { type: String, required: true },
-    password: { type: String,required:true},
+    password: { type: String, required: true },
     // balance: { type: Number, required: true },
     balance: {
       type: Number,
       required: true,
-      get: (value) => value.toFixed(8),
     },
+    transaction_history: { type: Array, default: [] },
   },
   { timestamps: true }
 );

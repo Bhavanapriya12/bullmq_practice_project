@@ -73,6 +73,7 @@ async function get_billers_store_database() {
 
         const billerResponse = await api.get(`/billers/${biller.code}`);
         const billerData = billerResponse.data.data;
+        // console.log(billerData);
 
         let otherCharges;
 
@@ -96,96 +97,25 @@ async function get_billers_store_database() {
           status: billerData.status,
           type: billerData.type,
           other_charges: otherCharges,
+
           payload: {
-            referenceNumber: {
-              label: "Account Number",
-              description: "Account Number",
-              rules: {
-                required: {
-                  code: 4,
-                  message: "Please provide the account number.",
-                },
-                numeric: {
-                  code: 8,
-                  message: "Please enter the account number in numeric format.",
-                },
-                "digits:10": {
-                  code: 5,
-                  message: "The account number must be 10 digits.",
-                },
-                "custom:enable_barcode": {
-                  code: 45,
-                  message: "There seems to be a problem in the barcode scanner",
-                },
-                "custom:NOT_FOUND": {
-                  code: 3,
-                  message:
-                    "Oh no! We can’t find this Customer Account Number. Would you mind checking again? You’ll find your 10-digit Meralco CAN on the lower left portion of your latest Meralco bill.",
-                },
-                "transaction_limit:1000000": {
-                  code: 13,
-                  message:
-                    "Uh oh! Your account has already reached maximum transactions with us for this month. To continue with your transaction, you may pay via the Meralco Mobile App, Meralco Online, or any Meralco Business Center near you. Thank you!",
-                },
-                "custom:WITH_DFO": {
-                  code: 1,
-                  message:
-                    "Hey, your account is already for disconnection. A crew might already be on its way and your payment may not be posted in time to avoid disconnection. In case your service is disconnected, you will be reconnected within the next business day from the time your payment is posted. A reconnection fee will be included on your next bill. Do you still want to proceed?",
-                },
-                "custom:DISCONNECTED": {
-                  code: 2,
-                  message: "",
-                },
-              },
-            },
-            amount: {
-              label: "Amount",
-              description: "Amount to be paid",
-              rules: {
-                required: {
-                  code: 4,
-                  message: "Please provide the amount.",
-                },
-                numeric: {
-                  code: 8,
-                  message: "Please enter the amount in numeric format.",
-                },
-                wallet: {
-                  code: 17,
-                  message:
-                    "The wallet balance of the customer is below the required amount.",
-                },
-                "min:5": {
-                  code: 6,
-                  message:
-                    "Oops! Minimum amount due must be at least P5.00. Don’t worry, any excess amount will be carried over on your next billing statement.",
-                },
-                "max:100000": {
-                  code: 7,
-                  message:
-                    "Oops! Your amount due exceeds our maximum limit amount. You may pay this amount via the Meralco Mobile App, Meralco Online, or any Meralco Business Center near you. Thank you!",
-                },
-              },
-            },
-            validationNumber: {
-              label: "Validation Number",
-              description: "Reference for checking validity",
-              rules: {
-                required: {
-                  code: 4,
-                  message: "Please provide the validation number.",
-                },
-                alpha_dash: {
-                  code: 9,
-                  message:
-                    "Please make sure that the validation number is in alpha dash format.",
-                },
-                verification: {
-                  code: 14,
-                  message:
-                    "The validation number provided is invalid. Please try entering this again.",
-                },
-              },
+            referenceNumber:
+              billerData.parameters?.verify?.[0]?.referenceNumber?.label ||
+              "NONE",
+            amount: billerData.parameters?.verify?.[2]?.amount?.label || "NONE",
+            validationNumber:
+              billerData.parameters?.transact?.[1]?.validationNumber?.label ||
+              "NONE",
+            otherInfo: {
+              billMonth:
+                billerData.parameters?.verify?.[4]?.["otherInfo.BillMonth"]
+                  ?.label || "",
+              accountName:
+                billerData.parameters?.verify?.[5]?.["otherInfo.AccountName"]
+                  ?.label || "",
+              dueDate:
+                billerData.parameters?.verify?.[6]?.["otherInfo.DueDate"]
+                  ?.label || "",
             },
           },
         };

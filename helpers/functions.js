@@ -32,23 +32,23 @@ module.exports = {
   },
 
   generate_reference_number: async (tpa_id) => {
-    let sequenceStore = {};
     if (!tpa_id || tpa_id.length !== 4) {
       throw new Error("TPA ID must be 4 characters.");
     }
+
     const now = moment();
     const year = now.format("YY");
     const dayOfYear = now.dayOfYear().toString().padStart(3, "0");
-
     const today = now.format("YYYY-MM-DD");
 
-    if (!sequenceStore[today]) {
-      sequenceStore[today] = 1;
-    } else {
-      sequenceStore[today]++;
-    }
+    const sequenceDoc = await mongoFunctions.find_one_and_update(
+      "DATA",
+      { tpa_id: tpa_id },
+      { $inc: { sequence: 1 } }, // Increment the sequence
+      { upsert: true, returnDocument: "after" }
+    );
 
-    const sequenceNumber = sequenceStore[today].toString().padStart(7, "0");
+    const sequenceNumber = sequenceDoc.sequence.toString().padStart(7, "0");
     const clientReference = `${tpa_id}${year}${dayOfYear}${sequenceNumber}`;
 
     return clientReference;

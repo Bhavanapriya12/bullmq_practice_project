@@ -451,23 +451,25 @@ router.post("/get_biller_by_id", async (req, res) => {
 
     const get_token = await api_token();
 
-    // const api = axios.create({
-    //   baseURL: "https://stg.bc-api.bayad.com/v3",
-    //   headers: {
-    //     Authorization: `Bearer ${get_token}`,
-    //     "Content-Type": "application/json",
-    //   },
-    //   timeout: 5000,
-    // });
-
-    // const response = await api.get(`/billers/${data.biller_id}`);
-    let findId = await mongoFunctions.find_one("STATS", {
-      biller_id: data.biller_id,
+    const api = axios.create({
+      baseURL: "https://stg.bc-api.bayad.com/v3",
+      headers: {
+        Authorization: `Bearer ${get_token}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 5000,
     });
-    if (!findId) {
-      return res.status(400).send("Biller Not Found");
-    }
-    return res.status(200).json({ success: true, biller_details: findId });
+
+    const response = await api.get(`/billers/${data.biller_id}`);
+    // let findId = await mongoFunctions.find_one("STATS", {
+    //   biller_id: data.biller_id,
+    // });
+    // if (!findId) {
+    //   return res.status(400).send("Biller Not Found");
+    // }
+    return res
+      .status(200)
+      .json({ success: true, biller_details: response.data.data });
   } catch (error) {
     console.error("Error:", error.message);
     return res.status(500).json({
@@ -525,7 +527,7 @@ router.post("/verify_account", async (req, res) => {
 });
 
 //route to create payment
-router.post("/create_payment", async (req, res) => {
+router.post("/create_payment", Auth, async (req, res) => {
   var { value, error } = validations.create_payment(req.body);
   if (error) return res.status(400).send(error.details[0].message);
   let dataa = value;
@@ -533,6 +535,7 @@ router.post("/create_payment", async (req, res) => {
 
   const clientReference = await functions.generate_reference_number("E0GG");
   const validationNumber = dataa.validation_number;
+  const biller_id = dataa.biller_id;
 
   const data = {
     clientReference,
@@ -544,7 +547,7 @@ router.post("/create_payment", async (req, res) => {
   const config = {
     method: "post",
     maxBodyLength: Infinity,
-    url: "https://stg.bc-api.bayad.com/v3/billers/MECOR/payments",
+    url: `https://stg.bc-api.bayad.com/v3/billers/${biller_id}/payments`,
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -555,7 +558,39 @@ router.post("/create_payment", async (req, res) => {
     const createPayamount = await axios(config);
     console.log(createPayamount.data);
 
-    transactions_data = {};
+    const transactions_data = {
+      amount: createPayamount.data.amount,
+      sender_id: req.employee.user_id,
+      biller_id: data.biller_id,
+      transaction_id: createPayamount.data.transaction_id,
+      reference_number: createPayamount.data.referenceNumber,
+      payment_method: createPayamount.data.paymentMethod,
+      payment_status: createPayamount.data.status,
+      other_charges: createPayamount.data.otherCharges,
+      total_amount: createPayamount.data.totalAmount,
+      transaction_date: new Date(),
+    };
+    console.log(-Number(transactions_data.total_amount));
+    const user = await mongoFunctions.find_one("FILES", {
+      user_id: req.employee.user_id,
+    });
+    if (!user) {
+      return res.status(400).send("USER NOT FOUND");
+    }
+    const balance = user.balance - transactions_data.total_amount;
+    if (balance < 0) {
+      return res.status(400).send("Limit Exceeded");
+    }
+    console.log("balance----------------", balance);
+    await mongoFunctions.find_one_and_update(
+      "FILES",
+      { user_id: req.employee.user_id },
+      {
+        $push: { transaction_history: transactions_data },
+        $inc: { balance: -balance },
+      },
+      { upsert: true }
+    );
 
     return res.status(200).send(createPayamount.data);
   } catch (error) {
