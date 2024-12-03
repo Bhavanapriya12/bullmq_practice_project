@@ -2,31 +2,30 @@ const mongoose = require("mongoose");
 
 const transaction_schema = new mongoose.Schema(
   {
-    user_id: { type: String, required: true, index: true },
+    sender_id: { type: String, required: true, index: true },
 
-    t_id: {
-      type: String,
-    },
-    sender: {
-      type: String,
-    },
-    receiver: {
-      type: String,
-    },
-    status: {
-      type: String,
-    },
-    coin: {
-      type: String,
-    },
     amount: {
-      type: Number,
-      get: (value) => value.toFixed(8),
-    },
-    payment_type: {
       type: String,
     },
-    transaction_fee: {
+    biller_id: {
+      type: String,
+    },
+    transaction_id: {
+      type: String,
+    },
+    reference_number: {
+      type: String,
+    },
+    payment_method: {
+      type: String,
+    },
+    payment_status: {
+      type: String,
+    },
+    other_charges: {
+      type: String,
+    },
+    total_amount: {
       type: Number,
     },
   },

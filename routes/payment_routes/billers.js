@@ -559,40 +559,53 @@ router.post("/create_payment", Auth, async (req, res) => {
     console.log(createPayamount.data);
 
     const transactions_data = {
-      amount: createPayamount.data.amount,
+      amount: createPayamount.data.data.amount,
       sender_id: req.employee.user_id,
-      biller_id: data.biller_id,
-      transaction_id: createPayamount.data.transaction_id,
-      reference_number: createPayamount.data.referenceNumber,
-      payment_method: createPayamount.data.paymentMethod,
-      payment_status: createPayamount.data.status,
-      other_charges: createPayamount.data.otherCharges,
-      total_amount: createPayamount.data.totalAmount,
+      biller_id: biller_id,
+      transaction_id: createPayamount.data.data.transactionId,
+      reference_number: createPayamount.data.data.referenceNumber,
+      payment_method: createPayamount.data.data.paymentMethod,
+      payment_status: createPayamount.data.data.status,
+      other_charges: createPayamount.data.data.otherCharges,
+      total_amount: createPayamount.data.data.totalAmount,
       transaction_date: new Date(),
     };
-    console.log(-Number(transactions_data.total_amount));
+    console.log(transactions_data);
+
     const user = await mongoFunctions.find_one("FILES", {
       user_id: req.employee.user_id,
     });
     if (!user) {
       return res.status(400).send("USER NOT FOUND");
     }
-    const balance = user.balance - transactions_data.total_amount;
+    console.log(user.balance);
+    console.log(transactions_data.total_amount);
+    const balance = user.balance - parseFloat(transactions_data.total_amount);
+    if (user.balance < 0) {
+      return res.status(400).send("Insufficient Balance");
+    }
     if (balance < 0) {
       return res.status(400).send("Limit Exceeded");
     }
+
     console.log("balance----------------", balance);
     await mongoFunctions.find_one_and_update(
       "FILES",
       { user_id: req.employee.user_id },
       {
-        $push: { transaction_history: transactions_data },
-        $inc: { balance: -balance },
+        $inc: { balance: balance },
       },
       { upsert: true }
     );
-
-    return res.status(200).send(createPayamount.data);
+    await mongoFunctions.find_one_and_update(
+      "HISTORY",
+      { sender_id: req.employee.user_id },
+      {
+        $set: { ...transactions_data },
+      },
+      { upsert: true, new: true }
+    );
+    return res.status(200).send(createPayamount);
   } catch (error) {
     console.error(
       "Error response:",

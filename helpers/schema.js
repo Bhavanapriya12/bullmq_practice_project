@@ -66,6 +66,7 @@ function verify_account(data) {
     amount: Joi.string().required(),
     account_number: Joi.string().required(),
     other_charges: Joi.string().required(),
+    otherInfo: Joi.object().optional(),
   });
   return schema.validate(data);
 }

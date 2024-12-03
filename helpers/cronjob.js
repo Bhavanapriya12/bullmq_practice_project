@@ -98,26 +98,7 @@ async function get_billers_store_database() {
           type: billerData.type,
           other_charges: otherCharges,
 
-          payload: {
-            referenceNumber:
-              billerData.parameters?.verify?.[0]?.referenceNumber?.label ||
-              "NONE",
-            amount: billerData.parameters?.verify?.[2]?.amount?.label || "NONE",
-            validationNumber:
-              billerData.parameters?.transact?.[1]?.validationNumber?.label ||
-              "NONE",
-            otherInfo: {
-              billMonth:
-                billerData.parameters?.verify?.[4]?.["otherInfo.BillMonth"]
-                  ?.label || "",
-              accountName:
-                billerData.parameters?.verify?.[5]?.["otherInfo.AccountName"]
-                  ?.label || "",
-              dueDate:
-                billerData.parameters?.verify?.[6]?.["otherInfo.DueDate"]
-                  ?.label || "",
-            },
-          },
+          payload: billerData.parameters.verify,
         };
 
         await mongoFunctions.update_one(
@@ -140,34 +121,42 @@ async function get_billers_store_database() {
 
 async function reschedule_transactions() {
   try {
-    console.log("reschedule_transactions called");
+    const get_token = await api_token();
+    console.log(get_token);
 
-    const api = await createApiInstance();
+    const api = axios.create({
+      baseURL: "https://stg.bc-api.bayad.com/v3",
+      headers: {
+        Authorization: `Bearer ${get_token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
     const trans_data = await mongoFunctions.find("STATS", {
       status: "pending",
     });
 
     for (const data of trans_data) {
       try {
-        const { client_reference, biller_code } = data;
+        const { reference_number, biller_id } = data;
 
         const response = await api.post(
-          `/billers/${biller_code}/payments/${client_reference}`
+          `/billers/${biller_id}/payments/${reference_number}`
         );
 
         console.log(
-          `API call successful for client_reference: ${client_reference}`,
+          `API call successful for client_reference: ${reference_number}`,
           response.data
         );
 
         await mongoFunctions.update_one(
-          "STATS",
-          { client_reference },
-          { $set: { status: "processed" } }
+          "HISTORY",
+          { reference_number: reference_number },
+          { $set: { status: response.data.status } }
         );
       } catch (error) {
         console.error(
-          `Error processing client_reference: ${data.client_reference}`,
+          `Error processing client_reference: ${data.reference_number}`,
           error.message
         );
       }
@@ -189,7 +178,7 @@ cron.schedule(
 );
 
 cron.schedule(
-  "35 11 * * *",
+  "09 17 * * *",
   async () => {
     console.log("Cron started: get_billers_store_database");
     await get_billers_store_database();
