@@ -19,6 +19,9 @@ const transaction_schema = new mongoose.Schema(
     payment_method: {
       type: String,
     },
+    client_reference: {
+      type: String,
+    },
     payment_status: {
       type: String,
     },

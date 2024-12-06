@@ -12,3 +12,30 @@
 
 // const encodedCredentials = base64EncodeCredentials(username, password);
 // console.log(encodedCredentials);
+
+// const x = {
+//   i: 0,
+//   valueOf: function () {
+//     this.i++;
+//     return `${this.i}`;
+//   },
+// };
+// console.log(x);
+// if (x == "1" && x == "2" && x == "3") {
+//   console.log("in");
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

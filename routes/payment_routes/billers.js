@@ -11,6 +11,7 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const XLSX = require("xlsx");
 const axios = require("axios");
+// const queue_job = require("../../helpers/producer");
 const {
   update_redis,
   genOtp,
@@ -23,6 +24,7 @@ const {
   redisGetFromHash,
   get_categories,
 } = require("../../helpers/redisFunctions");
+
 router.post("/data", async (req, res) => {
   var { value, error } = validations.add_data(req.body);
   if (error) return res.status(400).send(error.details[0].message);
@@ -201,7 +203,11 @@ const verify_account = async (
   biller_code,
   account_number,
   amount,
-  other_charges
+  other_charges,
+  // branch_code,
+  // payment_type,
+  account_numbe,
+  contact_number
 ) => {
   try {
     const get_token = await api_token();
@@ -219,6 +225,13 @@ const verify_account = async (
       paymentMethod: "CASH",
       amount: amount,
       otherCharges: other_charges,
+
+      otherInfo: {
+        // BranchCode: branch_code,
+        // PaymentType: payment_type,
+        AffiliateBranch: contact_number,
+        AccountName: account_numbe,
+      },
     };
 
     const response = await api.post(
@@ -257,7 +270,7 @@ async function create_payment(
     // };
 
     const request_body = {
-      clientReference: functions.generate_reference_number("E0GG"),
+      clientReference: await bcrypt.generate_reference_number("E0GG"),
       validationNumber: "d529a73d-0c96-4a86-865f-d133daaba732",
     };
 
@@ -486,6 +499,7 @@ router.post("/verify_account", async (req, res) => {
   if (error) return res.status(400).send(error.details[0].message);
   let data = value;
   let other_charges;
+
   if (data.other_charges !== "NONE") {
     other_charges = data.other_charges;
   } else {
@@ -515,7 +529,11 @@ router.post("/verify_account", async (req, res) => {
       data.biller_code,
       data.account_number,
       data.amount,
-      other_charges
+      other_charges,
+      // data.branch_code,
+      // data.payment_type,
+      data.account_numbe,
+      data.contact_number
     );
     return res.status(200).json(result);
   } catch (error) {
@@ -527,96 +545,53 @@ router.post("/verify_account", async (req, res) => {
 });
 
 //route to create payment
+//route to create payment
 router.post("/create_payment", Auth, async (req, res) => {
   var { value, error } = validations.create_payment(req.body);
   if (error) return res.status(400).send(error.details[0].message);
   let dataa = value;
-  const token = await api_token();
 
-  const clientReference = await functions.generate_reference_number("E0GG");
+  const clientReference = await bcrypt.generate_reference_number("E0GG");
   const validationNumber = dataa.validation_number;
   const biller_id = dataa.biller_id;
 
-  const data = {
-    clientReference,
-    validationNumber,
-  };
-
-  console.log(data, "data");
-
-  const config = {
-    method: "post",
-    maxBodyLength: Infinity,
-    url: `https://stg.bc-api.bayad.com/v3/billers/${biller_id}/payments`,
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    data,
-  };
-
-  try {
-    const createPayamount = await axios(config);
-    console.log(createPayamount.data);
-
-    const transactions_data = {
-      amount: createPayamount.data.data.amount,
-      sender_id: req.employee.user_id,
-      biller_id: biller_id,
-      transaction_id: createPayamount.data.data.transactionId,
-      reference_number: createPayamount.data.data.referenceNumber,
-      payment_method: createPayamount.data.data.paymentMethod,
-      payment_status: createPayamount.data.data.status,
-      other_charges: createPayamount.data.data.otherCharges,
-      total_amount: createPayamount.data.data.totalAmount,
-      transaction_date: new Date(),
-    };
-    console.log(transactions_data);
-
-    const user = await mongoFunctions.find_one("FILES", {
-      user_id: req.employee.user_id,
-    });
-    if (!user) {
-      return res.status(400).send("USER NOT FOUND");
-    }
-    console.log(user.balance);
-    console.log(transactions_data.total_amount);
-    const balance = user.balance - parseFloat(transactions_data.total_amount);
-    if (user.balance < 0) {
-      return res.status(400).send("Insufficient Balance");
-    }
-    if (balance < 0) {
-      return res.status(400).send("Limit Exceeded");
-    }
-
-    console.log("balance----------------", balance);
-    await mongoFunctions.find_one_and_update(
-      "FILES",
-      { user_id: req.employee.user_id },
-      {
-        $inc: { balance: balance },
-      },
-      { upsert: true }
-    );
-    await mongoFunctions.find_one_and_update(
-      "HISTORY",
-      { sender_id: req.employee.user_id },
-      {
-        $set: { ...transactions_data },
-      },
-      { upsert: true, new: true }
-    );
-    return res.status(200).send(createPayamount);
-  } catch (error) {
-    console.error(
-      "Error response:",
-      error.response ? error.response.data : error.message
-    );
-    return res
-      .status(400)
-      .send(
-        error.response ? error.response.data.details.message : "Error occurred"
-      );
+  const user = await mongoFunctions.find_one("FILES", {
+    user_id: req.employee.user_id,
+  });
+  if (!user) {
+    return res.status(400).send("USER NOT FOUND");
   }
+  const sender_id = user.user_id;
+  console.log(user.balance);
+
+  if (user.balance < 0) {
+    return res.status(400).send("Insufficient Balance");
+  }
+  const job = await queue_job.add_job(
+    "biller_payment",
+    {
+      clientReference,
+      validationNumber,
+      biller_id,
+      sender_id,
+    }
+    // {
+    //   timeout: 5000,
+    // }
+  );
+
+  return res.status(200).send("Payment Processed Successfully..!!");
+  // } catch (error) {
+  //   console.error(
+  //     "Error response:",
+  //     error.response ? error.response.data : error.message
+  //   );
+  //   return res
+  //     .status(400)
+  //     .send(
+  //       error.response ? error.response.data.details.message : "Error occurred"
+  //     );
+  // }
 });
 
 //route to inquire payment

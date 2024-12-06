@@ -66,7 +66,10 @@ function verify_account(data) {
     amount: Joi.string().required(),
     account_number: Joi.string().required(),
     other_charges: Joi.string().required(),
-    otherInfo: Joi.object().optional(),
+    // payment_type: Joi.string().optional(),
+    // branch_code: Joi.string().optional(),
+    account_numbe: Joi.string().optional(),
+    contact_number: Joi.string().optional(),
   });
   return schema.validate(data);
 }

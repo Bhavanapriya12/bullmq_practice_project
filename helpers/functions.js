@@ -1,5 +1,6 @@
 require("dotenv").config();
 const moment = require("moment");
+const { api_token } = require("../routes/payment_routes/billers");
 
 require("./db")();
 const redis = require("./redisFunctions");
@@ -30,29 +31,20 @@ module.exports = {
         .toUpperCase() + str
     );
   },
-
-  generate_reference_number: async (tpa_id) => {
-    if (!tpa_id || tpa_id.length !== 4) {
-      throw new Error("TPA ID must be 4 characters.");
+  refund_amount: async (user_id, balance) => {
+    let user = await mongoFunctions.find_one("FILES", { user_id: user_id });
+    const balance_r = parseFloat(balance);
+    if (!user) {
+      return False;
     }
-
-    const now = moment();
-    const year = now.format("YY");
-    const dayOfYear = now.dayOfYear().toString().padStart(3, "0");
-    const today = now.format("YYYY-MM-DD");
-
-    const sequenceDoc = await mongoFunctions.find_one_and_update(
-      "DATA",
-      { tpa_id: tpa_id },
-      { $inc: { sequence: 1 } }, // Increment the sequence
-      { upsert: true, returnDocument: "after" }
+    await mongoFunctions.find_one_and_update(
+      "FILES",
+      { user_id: user_id },
+      { $inc: { balance: +balance_r } }
     );
-
-    const sequenceNumber = sequenceDoc.sequence.toString().padStart(7, "0");
-    const clientReference = `${tpa_id}${year}${dayOfYear}${sequenceNumber}`;
-
-    return clientReference;
+    return True;
   },
+
   transaction: async (data) => {
     const TRANSACTION_STATUS = {
       SUCCESS: "success",

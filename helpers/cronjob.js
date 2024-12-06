@@ -4,6 +4,7 @@ const functions = require("./functions");
 const { api_token } = require("../routes/payment_routes/billers");
 const axios = require("axios");
 const mongoFunctions = require("./mongoFunctions");
+const STATS = require("../models/add_stats");
 
 async function get_categories_and_store_billers() {
   console.log("get_categories_and_store_billers called");
@@ -33,7 +34,7 @@ async function get_categories_and_store_billers() {
       const billersResponse = await api.get(`/billers?category=${category}`);
       const billers = billersResponse.data.data;
 
-      await redisFunctions.redisInsert("categories", category, billers, true);
+      await redisFunctions.redisInsert(category, billers);
       console.log(`Stored billers for category: ${category}`);
     } catch (err) {
       console.error(`Failed to fetch billers for category: ${category}`);
@@ -43,7 +44,27 @@ async function get_categories_and_store_billers() {
 
   console.log("All categories processed and stored in Redis.");
 }
+async function get_categories_and_store_categories() {
+  console.log("get_categories_and_store_categories called");
+  const get_token = await api_token();
+  console.log(get_token);
 
+  const api = axios.create({
+    baseURL: "https://stg.bc-api.bayad.com/v3",
+    headers: {
+      Authorization: `Bearer ${get_token}`,
+      "Content-Type": "application/json",
+    },
+  });
+
+  const categoriesResponse = await api.get("/billers?categoriesOnly=true");
+
+  const categories = categoriesResponse.data.data;
+  await redisFunctions.store_categories_in_redis(categories);
+
+  console.log("All categories processed and stored in Redis.");
+}
+get_categories_and_store_categories();
 async function get_billers_store_database() {
   try {
     const get_token = await api_token();
@@ -120,52 +141,64 @@ async function get_billers_store_database() {
 }
 
 async function reschedule_transactions() {
-  try {
-    const get_token = await api_token();
-    console.log(get_token);
+  // try {
+  let get_token = await api_token();
+  console.log(
+    "token---------------------------------------------------in cronjob",
+    get_token
+  );
 
-    const api = axios.create({
-      baseURL: "https://stg.bc-api.bayad.com/v3",
-      headers: {
-        Authorization: `Bearer ${get_token}`,
-        "Content-Type": "application/json",
-      },
-    });
+  let api = axios.create({
+    baseURL: "https://stg.bc-api.bayad.com/v3",
+    headers: {
+      Authorization: `Bearer ${get_token}`,
+      "Content-Type": "application/json",
+    },
+  });
 
-    const trans_data = await mongoFunctions.find("STATS", {
-      status: "pending",
-    });
+  const trans_data = await mongoFunctions.find("HISTORY", {
+    payment_status: "PENDING",
+  });
 
-    for (const data of trans_data) {
-      try {
-        const { reference_number, biller_id } = data;
+  for (const data of trans_data) {
+    // try {
+    const biller_id = data.biller_id;
+    const transaction_id = data.transaction_id;
+    console.log(transaction_id);
 
-        const response = await api.post(
-          `/billers/${biller_id}/payments/${reference_number}`
-        );
+    const client_reference = data.client_reference;
+    console.log(client_reference);
 
-        console.log(
-          `API call successful for client_reference: ${reference_number}`,
-          response.data
-        );
+    const response = await api.get(
+      `/billers/${biller_id}/payments/${client_reference}`
+    );
 
-        await mongoFunctions.update_one(
-          "HISTORY",
-          { reference_number: reference_number },
-          { $set: { status: response.data.status } }
-        );
-      } catch (error) {
-        console.error(
-          `Error processing client_reference: ${data.reference_number}`,
-          error.message
-        );
-      }
+    console.log(
+      `API call successful for client_reference: ${client_reference}`,
+      response.data
+    );
+    const payment_status = response.data.data.status;
+    console.log(payment_status);
+
+    const status = await mongoFunctions.update_one(
+      "HISTORY",
+      { transaction_id: transaction_id },
+      { $set: { payment_status: payment_status } }
+    );
+    if (status == "FAILED") {
+      const s = await functions.refund_amount(status.sender_id, status.amount);
+      console.log(s);
     }
-  } catch (error) {
-    console.error("Error in reschedule_transactions:", error.message);
+    // } catch (error) {
+    //   console.error(`Error processing client_reference:`, error.message);
+    // }
   }
+  // } catch (error) {
+  //   console.error("Error in reschedule_transactions:", error.message);
+  // }
 }
-// get_categories_and_store_billers();
+// reschedule_transactions();
+get_categories_and_store_billers();
 // get_billers_store_database();
 // Schedule Cron Jobs
 cron.schedule(

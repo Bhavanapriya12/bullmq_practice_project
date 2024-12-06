@@ -1,6 +1,6 @@
 const { Worker } = require("bullmq");
 
-const functions = require("./functions");
+const hash = require("./hash");
 
 const connection = {
   host: process.env.REDIS_URL,
@@ -12,10 +12,11 @@ console.log("connection-->", connection);
 const worker = new Worker(
   "my-queue",
   async (job) => {
-    console.log("job-----------ooooodata-->", job);
-    if (job.name === "payment") {
+    console.log("job-----------ooooodata-->", job.data);
+    if (job.name === "biller_payment") {
       console.log("job started");
-      const jobresponse = await functions.transaction(job.data);
+      const jobresponse = await hash.processing_payment(job.data);
+      // await functions.transaction(job.data);
       console.log("jobresponse--->", jobresponse);
 
       console.log(`${job.name}--->completed`);

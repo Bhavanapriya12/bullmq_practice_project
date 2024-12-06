@@ -280,18 +280,16 @@ module.exports = {
   },
   redisInsert: async (hash, key, data, parse = false) => {
     try {
-      // Parse data to JSON string if specified
       if (parse) {
         data = JSON.stringify(data);
       }
 
-      // Insert the data into the hash
       const result = await client.hSet(hash, key, data);
       console.log(`Data inserted into hash "${hash}" with key "${key}".`);
       return result;
     } catch (err) {
       console.error("Error in redisInsert:", err);
-      throw err; // Rethrow the error to handle it upstream
+      throw err;
     }
   },
 
