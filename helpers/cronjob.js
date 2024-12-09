@@ -1,226 +1,172 @@
 const cron = require("node-cron");
-const redisFunctions = require("./redisFunctions");
+const redis_functions = require("./redisFunctions");
 const functions = require("./functions");
 const { api_token } = require("../routes/payment_routes/billers");
 const axios = require("axios");
-const mongoFunctions = require("./mongoFunctions");
-const STATS = require("../models/add_stats");
+const mongo_functions = require("./mongoFunctions");
 
-async function get_categories_and_store_billers() {
-  console.log("get_categories_and_store_billers called");
-  const get_token = await api_token();
-  console.log(get_token);
-
-  const api = axios.create({
-    baseURL: "https://stg.bc-api.bayad.com/v3",
-    headers: {
-      Authorization: `Bearer ${get_token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  const categoriesResponse = await api.get("/billers?categoriesOnly=true");
-
-  const categories = categoriesResponse.data.data;
-
-  if (!categories || categories.length === 0) {
-    console.error("No categories found");
-    return;
-  }
-
-  for (const category of categories) {
-    try {
-      console.log(`Fetching billers for category: ${category}`);
-      const billersResponse = await api.get(`/billers?category=${category}`);
-      const billers = billersResponse.data.data;
-
-      await redisFunctions.redisInsert(category, billers);
-      console.log(`Stored billers for category: ${category}`);
-    } catch (err) {
-      console.error(`Failed to fetch billers for category: ${category}`);
-      console.error(err.message);
-    }
-  }
-
-  console.log("All categories processed and stored in Redis.");
-}
-async function get_categories_and_store_categories() {
-  console.log("get_categories_and_store_categories called");
-  const get_token = await api_token();
-  console.log(get_token);
-
-  const api = axios.create({
-    baseURL: "https://stg.bc-api.bayad.com/v3",
-    headers: {
-      Authorization: `Bearer ${get_token}`,
-      "Content-Type": "application/json",
-    },
-  });
-
-  const categoriesResponse = await api.get("/billers?categoriesOnly=true");
-
-  const categories = categoriesResponse.data.data;
-  await redisFunctions.store_categories_in_redis(categories);
-
-  console.log("All categories processed and stored in Redis.");
-}
-get_categories_and_store_categories();
-async function get_billers_store_database() {
+async function process_categories_and_billers() {
   try {
-    const get_token = await api_token();
-    console.log(get_token);
+    console.log("Starting to process categories and billers...");
+    const token = await api_token();
 
     const api = axios.create({
       baseURL: "https://stg.bc-api.bayad.com/v3",
       headers: {
-        Authorization: `Bearer ${get_token}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
     });
 
-    const billersResponse = await api.get("/billers");
-    const billers = billersResponse.data.data;
+    // Fetch categories and store in Redis
+    const categories_response = await api.get("/billers?categoriesOnly=true");
+    const categories = categories_response.data.data;
 
-    if (!billers || billers.length === 0) {
+    if (!categories || categories.length === 0) {
+      console.error("No categories found");
+      return;
+    }
+
+    await redis_functions.store_categories_in_redis(categories);
+    console.log("Categories stored in Redis.");
+
+    // Fetch billers for each category and store in Redis
+    for (const category of categories) {
+      try {
+        console.log(`Processing billers for category: ${category}`);
+        const billers_response = await api.get(`/billers?category=${category}`);
+        const billers = billers_response.data.data;
+
+        await redis_functions.store_billers_by_category(category, billers);
+        console.log(`Stored billers for category: ${category}`);
+      } catch (err) {
+        console.error(
+          `Error fetching billers for category ${category}:`,
+          err.message
+        );
+      }
+    }
+
+    // Fetch all billers and store in MongoDB
+    const all_billers_response = await api.get("/billers");
+    const all_billers = all_billers_response.data.data;
+
+    if (!all_billers || all_billers.length === 0) {
       console.error("No billers found");
       return;
     }
 
-    console.log("Processing billers...");
-
-    for (const biller of billers) {
+    for (const biller of all_billers) {
       try {
-        console.log(`Fetching details for biller: ${biller.name}`);
+        const biller_response = await api.get(`/billers/${biller.code}`);
+        const biller_data = biller_response.data.data;
 
-        const billerResponse = await api.get(`/billers/${biller.code}`);
-        const billerData = billerResponse.data.data;
-        // console.log(billerData);
-
-        let otherCharges;
-
+        let other_charges;
         try {
-          const chargesResponse = await api.get(`/billers/${biller.code}/fees`);
-          otherCharges = chargesResponse.data.data.otherCharges;
-          console.log("othercharges'''''''", otherCharges);
+          const charges_response = await api.get(
+            `/billers/${biller.code}/fees`
+          );
+          other_charges = charges_response.data.data.otherCharges;
         } catch (error) {
           console.error(
-            `Failed to fetch charges for biller: ${biller.code}`,
+            `Error fetching charges for biller ${biller.code}:`,
             error.message
           );
-          otherCharges = "NONE";
-          console.log(otherCharges);
+          other_charges = "NONE";
         }
-        const billers_data = {
-          biller_id: billerData.code,
-          biller_name: billerData.name,
-          description: billerData.description,
-          category: billerData.category,
-          status: billerData.status,
-          type: billerData.type,
-          other_charges: otherCharges,
 
-          payload: billerData.parameters.verify,
+        const billers_data = {
+          biller_id: biller_data.code,
+          biller_name: biller_data.name,
+          description: biller_data.description,
+          category: biller_data.category,
+          status: biller_data.status,
+          type: biller_data.type,
+          other_charges: other_charges,
+          payload: biller_data.parameters.verify,
         };
 
-        await mongoFunctions.update_one(
+        await mongo_functions.update_one(
           "STATS",
-          { biller_id: billerData.code },
+          { biller_id: biller_data.code },
           { $set: billers_data },
           { upsert: true }
         );
-
-        console.log(`Stored biller: ${billerData.name}`);
+        console.log(`Stored biller: ${biller_data.name}`);
       } catch (err) {
-        console.error(`Error storing biller: ${biller.name}`);
-        console.error(err);
+        console.error(`Error storing biller ${biller.name}:`, err.message);
       }
     }
-  } catch (error) {
-    console.error("Error in get_billers_store_database:", error.message);
+    console.log("Categories and billers processed successfully.");
+  } catch (err) {
+    console.error("Error in process_categories_and_billers:", err.message);
   }
 }
 
 async function reschedule_transactions() {
-  // try {
-  let get_token = await api_token();
-  console.log(
-    "token---------------------------------------------------in cronjob",
-    get_token
-  );
+  try {
+    console.log("Rescheduling transactions...");
+    const token = await api_token();
 
-  let api = axios.create({
-    baseURL: "https://stg.bc-api.bayad.com/v3",
-    headers: {
-      Authorization: `Bearer ${get_token}`,
-      "Content-Type": "application/json",
-    },
-  });
+    const api = axios.create({
+      baseURL: "https://stg.bc-api.bayad.com/v3",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-  const trans_data = await mongoFunctions.find("HISTORY", {
-    payment_status: "PENDING",
-  });
+    const pending_transactions = await mongo_functions.find("HISTORY", {
+      payment_status: "PENDING",
+    });
 
-  for (const data of trans_data) {
-    // try {
-    const biller_id = data.biller_id;
-    const transaction_id = data.transaction_id;
-    console.log(transaction_id);
+    for (const transaction of pending_transactions) {
+      try {
+        const { biller_id, transaction_id, client_reference } = transaction;
 
-    const client_reference = data.client_reference;
-    console.log(client_reference);
+        const response = await api.get(
+          `/billers/${biller_id}/payments/${client_reference}`
+        );
+        const payment_status = response.data.data.status;
 
-    const response = await api.get(
-      `/billers/${biller_id}/payments/${client_reference}`
-    );
+        await mongo_functions.update_one(
+          "HISTORY",
+          { transaction_id },
+          { $set: { payment_status } }
+        );
 
-    console.log(
-      `API call successful for client_reference: ${client_reference}`,
-      response.data
-    );
-    const payment_status = response.data.data.status;
-    console.log(payment_status);
-
-    const status = await mongoFunctions.update_one(
-      "HISTORY",
-      { transaction_id: transaction_id },
-      { $set: { payment_status: payment_status } }
-    );
-    if (status == "FAILED") {
-      const s = await functions.refund_amount(status.sender_id, status.amount);
-      console.log(s);
+        if (payment_status === "FAILED") {
+          await functions.refund_amount(
+            transaction.sender_id,
+            transaction.amount
+          );
+          console.log(`Refund processed for transaction: ${transaction_id}`);
+        }
+      } catch (err) {
+        console.error(
+          `Error processing transaction ${transaction.transaction_id}:`,
+          err.message
+        );
+      }
     }
-    // } catch (error) {
-    //   console.error(`Error processing client_reference:`, error.message);
-    // }
+    console.log("Transactions rescheduled successfully.");
+  } catch (err) {
+    console.error("Error in reschedule_transactions:", err.message);
   }
-  // } catch (error) {
-  //   console.error("Error in reschedule_transactions:", error.message);
-  // }
 }
-// reschedule_transactions();
-get_categories_and_store_billers();
-// get_billers_store_database();
-// Schedule Cron Jobs
-cron.schedule(
-  "53 16 * * *",
-  async () => {
-    console.log("Cron started: get_categories_and_store_billers");
-    await get_categories_and_store_billers();
-  },
-  { scheduled: true, timezone: "Asia/Kolkata" }
-);
 
 cron.schedule(
-  "09 17 * * *",
+  "55 16 * * *",
   async () => {
-    console.log("Cron started: get_billers_store_database");
-    await get_billers_store_database();
+    console.log("cron started...");
+    await process_categories_and_billers();
+    await reschedule_transactions();
+    console.log("cron completed.");
   },
   { scheduled: true, timezone: "Asia/Kolkata" }
 );
 
 module.exports = {
-  get_categories_and_store_billers,
-  get_billers_store_database,
+  process_categories_and_billers,
   reschedule_transactions,
 };

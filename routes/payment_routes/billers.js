@@ -407,7 +407,7 @@ router.post("/get_billers_by_category", async (req, res) => {
     // });
 
     // const response = await api.get(`/billers?category=${data.category}`);
-    const category = await redisGetFromHash("categories", data.category);
+    const category = await redisGetFromHash("category", data.category);
 
     return res.status(200).json({
       success: true,

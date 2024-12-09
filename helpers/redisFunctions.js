@@ -183,6 +183,32 @@ module.exports = {
       return false;
     }
   },
+  store_billers_by_category: async (category, billers) => {
+    if (!category || !billers || billers.length === 0) {
+      console.error("Invalid category or billers provided.");
+      return;
+    }
+
+    try {
+      const billers_data = JSON.stringify(billers);
+
+      client.hSet("category", category, billers_data, (err, res) => {
+        if (err) {
+          console.error(`Error storing billers for category: ${category}`, err);
+        } else {
+          console.log(
+            `Stored ${billers.length} billers under category: ${category}`
+          );
+        }
+      });
+    } catch (error) {
+      console.error(
+        `Error storing billers for category: ${category}`,
+        error.message
+      );
+    }
+  },
+
   redis_set_with_expiration: async (
     key,
     value,
